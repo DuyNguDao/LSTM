@@ -7,6 +7,7 @@ import numpy as np
 from sklearn import metrics
 from util.plot import plot_cm
 from tqdm import tqdm
+from Data_Loader.dataset import processing_data
 
 
 def detect_image(path_test, path_model, batch_size=256):
@@ -18,7 +19,7 @@ def detect_image(path_test, path_model, batch_size=256):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # load model
     class_names = ('Standing', 'Stand up', 'Sitting', 'Sit down', 'Lying Down', 'Walking', 'Fall Down')
-    model = RNN(input_size=26, num_classes=len(class_names), device=device)
+    model = RNN(input_size=30, num_classes=len(class_names), device=device)
     model.load_state_dict(torch.load(path_model, map_location=device))
     model.to(device=device)
     model.eval()
@@ -33,8 +34,10 @@ def detect_image(path_test, path_model, batch_size=256):
     del fts, lbs
 
     features = np.concatenate(features, axis=0)  # 30x34
-    features = np.concatenate([features[:, :, 0:1, :], features[:, :, 5:, :]], axis=2)
-    features = features[:, :, :, :2].reshape(len(features), 30, 26)
+    features = processing_data(features)
+    # features = np.concatenate([features[:, :, 0:1, :], features[:, :, 5:, :]], axis=2)
+    # features = features[:, ::2, :, :]
+    # features = features[:, :, :, :2].reshape(len(features), features.shape[1], features.shape[2]*features.shape[3])
     labels = np.concatenate(labels, axis=0).argmax(1)
     test_dataset = TensorDataset(torch.tensor(features, dtype=torch.float32),
                                 torch.tensor(labels))
@@ -71,6 +74,6 @@ def detect_image(path_test, path_model, batch_size=256):
 
 
 if __name__ == '__main__':
-    path_model = 'runs/exp3/best.pt'
-    path_frame = '/home/duyngu/Downloads/Dataset_Human_Action/test.pkl'
+    path_model = 'runs/exp2/best.pt'
+    path_frame = '/home/duyngu/Downloads/Dataset_Human_Action/test_no_scale.pkl'
     detect_image(path_frame, path_model, batch_size=256)

@@ -1,106 +1,63 @@
-from torch.utils.data import Dataset
-from glob import glob
-from torchvision import transforms
-import os
-from PIL import Image
-import random
-import torch
-import csv
+import numpy as np
 
 
-class VideoFrameDataset(Dataset):
-    def __init__(self, root, img_size=64, num_frame=30):
-        self.classes_name = os.listdir(root)
-        self.img_size = img_size
-        self.num_frame = num_frame
-        self.videos = []
-        self.targets = []
-        for name in self.classes_name:
-            path_class = os.path.join(root, name)
-            name_video = os.listdir(path_class)
-            for id in name_video:
-                self.videos.append(os.path.join(path_class, id))
-                self.targets.append(name)
+def processing_data(features):
+    # remove score of keypoint
+    features = features[:, :, :, :2]
+    # ********************************* COMPUTE ANGLE *********************************************
+    # angle knee right
+    knee_hip = features[:, :, 14:15, :] - features[:, :, 12:13, :]
+    knee_ankle = features[:, :, 14:15, :] - features[:, :, 16:17, :]
+    a = np.sum(knee_hip * knee_ankle, axis=3)
+    b = np.sqrt(np.sum(knee_hip ** 2, axis=3)) * np.sqrt(np.sum(knee_ankle ** 2, axis=3))
+    b = np.where(b == 0, 1, b)
+    angle_knee_right = a / b
 
-        self.transform = transforms.Compose([transforms.Resize((self.img_size, self.img_size)),
-                                             transforms.ToTensor(),
-                                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                                  std=[0.229, 0.224, 0.225])])
+    # angle knee left
+    knee_hip = features[:, :, 13:14, :] - features[:, :, 11:12, :]
+    knee_ankle = features[:, :, 13:14, :] - features[:, :, 15:16, :]
+    a = np.sum(knee_hip * knee_ankle, axis=3)
+    b = np.sqrt(np.sum(knee_hip ** 2, axis=3)) * np.sqrt(np.sum(knee_ankle ** 2, axis=3))
+    b = np.where(b == 0, 1, b)
+    angle_knee_left = a / b
 
-    def __len__(self):
-        return len(self.targets)
+    # angle hip right
+    hip_shoulder = features[:, :, 12:13, :] - features[:, :, 6:7, :]
+    hip_knee = features[:, :, 12:13, :] - features[:, :, 14:15, :]
+    a = np.sum(hip_shoulder * hip_knee, axis=3)
+    b = np.sqrt(np.sum(hip_shoulder ** 2, axis=3)) * np.sqrt(np.sum(hip_knee ** 2, axis=3))
+    b = np.where(b == 0, 1, b)
+    angle_hip_right = a / b
 
-    def __getitem__(self, idx):
-        video = self.videos[idx]
-        video = torch.stack(self.read_video(video))
-        label = self.targets[idx]
-        label = self.classes_name.index(label)
-        return video, label
+    # angle hip left
+    hip_shoulder = features[:, :, 11:12, :] - features[:, :, 5:6, :]
+    hip_knee = features[:, :, 11:12, :] - features[:, :, 13:14, :]
+    a = np.sum(hip_shoulder * hip_knee, axis=3)
+    b = np.sqrt(np.sum(hip_shoulder ** 2, axis=3)) * np.sqrt(np.sum(hip_knee ** 2, axis=3))
+    b = np.where(b == 0, 1, b)
+    angle_hip_left = a / b
 
-    def read_video(self, path):
-        list_frame = os.listdir(path)
-        list_frame.sort()
-        frames = []
-        value_random = random.randrange(0, len(list_frame) - self.num_frame, 2)
-        for idx, name in enumerate(list_frame):
-            if idx >= value_random + self.num_frame or idx < value_random:
-                continue
-            image = Image.open(os.path.join(path, name))
-            image_trans = self.transform(image)
-            frames.append(image_trans)
-        return frames
+    # remove 4 point 1,2,3,4 with eye, ear
+    features = np.concatenate([features[:, :, 0:1, :], features[:, :, 5:, :]], axis=2)
 
+    # ***************************************** NORMALIZE ************************************
 
-class PoseFrameDataset(Dataset):
-    def __init__(self, root, size_pose=34, num_frame=30):
-        self.classes_name = os.listdir(root)
-        self.size_pose = size_pose
-        self.num_frame = num_frame
-        self.videos = []
-        self.targets = []
-        for name in self.classes_name:
-            path_class = os.path.join(root, name)
-            name_video = glob(path_class + '/*.csv')
-            for id in name_video:
-                file = open(id)
-                data = list(csv.reader(file))[1:]
-                file.close()
-                if len(data) < self.num_frame:
-                    continue
-                self.videos.append(id)
-                self.targets.append(name)
+    def scale_pose(xy):
+        """
+        Normalize pose points by scale with max/min value of each pose.
+        xy : (frames, parts, xy) or (parts, xy)
+        """
+        if xy.ndim == 2:
+            xy = np.expand_dims(xy, 0)
+        xy_min = np.nanmin(xy, axis=2).reshape(xy.shape[0], xy.shape[1], 1, 2)
+        xy_max = np.nanmax(xy, axis=2).reshape(xy.shape[0], xy.shape[1], 1, 2)
+        xy = (xy - xy_min) / (xy_max - xy_min) * 2 - 1
+        return xy
 
-    def __len__(self):
-        return len(self.targets)
+    features = scale_pose(features)
+    # flatten
+    features = features[:, :, :, :].reshape(len(features), features.shape[1], features.shape[2] * features.shape[3])
 
-    def __getitem__(self, idx):
-        video = self.videos[idx]
-        video = torch.stack(self.read_video(video))
-        label = self.targets[idx]
-        label = self.classes_name.index(label)
-        return video, label
-
-    def read_video(self, path):
-        file = open(path)
-        data = list(csv.reader(file))[1:]
-        file.close()
-        list_frame = [list(map(float, i)) for i in data]
-        # list_frame.sort()
-        frames = []
-        if len(list_frame) < self.num_frame + 2:
-            value_random = 0
-        else:
-            value_random = random.randrange(0, len(list_frame) - self.num_frame, 2)
-        for idx, name in enumerate(list_frame):
-            if idx >= value_random + self.num_frame or idx < value_random:
-                continue
-            # image = Image.open(os.path.join(path, name))
-            image = name
-            image_trans = torch.tensor(image)
-            frames.append(image_trans)
-        return frames
-
-
-
-
-
+    # ****************************************** Concatenate ********************************************************
+    features = np.concatenate([features, angle_hip_left, angle_hip_right, angle_knee_left, angle_knee_right], axis=2)
+    return features

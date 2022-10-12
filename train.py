@@ -23,11 +23,13 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from imblearn.under_sampling import RandomUnderSampler
 import yaml
+from Data_Loader.dataset import processing_data
 
 logging.addLevelName(logging.WARNING, "")
 
 # clear memory cuda
 torch.cuda.empty_cache()
+torch.cuda.reset_peak_memory_stats()
 # Get parameter
 with open("./config.yaml", "r") as stream:
     try:
@@ -52,8 +54,10 @@ with open(input_dataset, 'rb') as f:
 del fts, lbs
 
 features = np.concatenate(features, axis=0)  # 30x34
-features = np.concatenate([features[:, :, 0:1, :], features[:, :, 5:, :]], axis=2)
-features = features[:, :, :, :2].reshape(len(features), 30, 26)
+# # get 15 frame
+features = features[:, ::2, :, :]
+features = processing_data(features)
+# ****************************************** NORMALIZE CLASS ****************************************************
 labels = np.concatenate(labels, axis=0).argmax(1)
 
 print(" --------- Number class before balance ---------")
@@ -61,16 +65,16 @@ for i in range(7):
     print(f"class {i}: {labels.tolist().count(i)}")
 
 # # imbalance data
-ids = np.array([[i] for i in range(len(features))])
+# ids = np.array([[i] for i in range(len(features))])
 # under = RandomUnderSampler(sampling_strategy='majority')
 #
-remove_min = (labels != 5)  # label == 3 or 6
-label = labels[remove_min]
-id = ids[remove_min]
-label_min = labels[~remove_min]
-id_min = ids[~remove_min]
-id_min = id_min[:13000]
-label_min = label_min[:13000]
+# remove_min = (labels != 5)  # label == 3 or 6
+# label = labels[remove_min]
+# id = ids[remove_min]
+# label_min = labels[~remove_min]
+# id_min = ids[~remove_min]
+# id_min = id_min[:20000]
+# label_min = label_min[:20000]
 
 # remove_min = (label != 1)  # label == 3 or 6
 # label_min = np.concatenate((label[~remove_min], label_min), axis=0)
@@ -81,22 +85,22 @@ label_min = label_min[:13000]
 # for _ in range(4):
 #     id, label = under.fit_resample(id, label)
 #
-ids = np.concatenate((id, id_min), axis=0)
-labels = np.concatenate((label, label_min), axis=0)
+# ids = np.concatenate((id, id_min), axis=0)
+# labels = np.concatenate((label, label_min), axis=0)
 
-print(" --------- Number class after balance ---------")
-
-for i in range(7):
-    print(f"class {i}: {labels.tolist().count(i)}")
-
-# get feature
-ids = [i[0] for i in ids]
-features = features[ids]
+# print(" --------- Number class after balance ---------")
+#
+# for i in range(7):
+#     print(f"class {i}: {labels.tolist().count(i)}")
+#
+# # get feature
+# ids = [i[0] for i in ids]
+# features = features[ids]
 # ---------------------------------------------------------
 
 
 x_train, x_valid, y_train, y_valid = train_test_split(features, labels, test_size=0.2,
-                                                      random_state=9)
+                                                      random_state=42)
 train_dataset = TensorDataset(torch.tensor(x_train, dtype=torch.float32),
                               torch.tensor(y_train))
 val_dataset = TensorDataset(torch.tensor(x_valid, dtype=torch.float32),
@@ -128,7 +132,7 @@ classes_name = ['Standing', 'Stand up', 'Sitting', 'Sit down', 'Lying Down', 'Wa
 print("Class name:", classes_name)
 
 # load model LSTM
-model = RNN(input_size=26, num_classes=len(classes_name), device=device)
+model = RNN(input_size=features.shape[-1], num_classes=len(classes_name), device=device)
 model = model.to(device)
 
 # config function loss and optimizer
