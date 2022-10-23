@@ -46,21 +46,18 @@ input_size = data['img-size']
 num_frame = data['num-frame']
 path_save_model = data['project']
 features, labels = [], []
-for path in input_dataset:
 # Load dataset
-    with open(path, 'rb') as f:
-        fts, lbs = pickle.load(f)
-        features.append(fts)
-        labels.append(lbs)
-    del fts, lbs
-    print(path)
+with open(input_dataset, 'rb') as f:
+    fts, lbs = pickle.load(f)
+    features.append(fts)
+    labels.append(lbs)
+del fts, lbs
 
 features = np.concatenate(features, axis=0)  # 30x34
-# features = features[:, :, :, :2]
-#
-# # get 15 frame
-# features = features[:, ::2, :, :]
-# features = processing_data(features)
+features = features[:, :, :, :2]
+# get 15 frame
+features = features[:, ::2, :, :]
+features = processing_data(features)
 # ****************************************** NORMALIZE CLASS ****************************************************
 labels = np.concatenate(labels, axis=0).argmax(1)
 
@@ -108,7 +105,7 @@ classes_name = ['Standing', 'Stand up', 'Sitting', 'Sit down', 'Lying Down', 'Wa
 print("Class name:", classes_name)
 
 # load model LSTM
-model = RNN(input_size=512, num_classes=len(classes_name), device=device)
+model = RNN(input_size=26, num_classes=len(classes_name), device=device)
 model = model.to(device)
 
 # config function loss and optimizer
