@@ -34,11 +34,17 @@ def detect_image(path_test, path_model, batch_size=256):
     del fts, lbs
 
     features = np.concatenate(features, axis=0)  # 30x34
+    features = features[:, ::2, :, :]
     features = processing_data(features)
     # features = np.concatenate([features[:, :, 0:1, :], features[:, :, 5:, :]], axis=2)
     # features = features[:, ::2, :, :]
     # features = features[:, :, :, :2].reshape(len(features), features.shape[1], features.shape[2]*features.shape[3])
     labels = np.concatenate(labels, axis=0).argmax(1)
+    print(" --------- Number class test ---------")
+    for i in range(7):
+        print(f"class {i}: {labels.tolist().count(i)}")
+    exit()
+
     test_dataset = TensorDataset(torch.tensor(features, dtype=torch.float32),
                                 torch.tensor(labels))
 
@@ -74,6 +80,6 @@ def detect_image(path_test, path_model, batch_size=256):
 
 
 if __name__ == '__main__':
-    path_model = 'runs/exp2/best.pt'
+    path_model = 'runs/exp0/best.pt'
     path_frame = '/home/duyngu/Downloads/Dataset_Human_Action/test_no_scale.pkl'
     detect_image(path_frame, path_model, batch_size=256)

@@ -1,6 +1,7 @@
 """
 Dao Duy Ngu
 """
+import cv2
 import torch
 from torchvision import datasets, transforms
 import torch.nn as nn
@@ -44,19 +45,22 @@ batch_size = data['batch-size']
 input_size = data['img-size']
 num_frame = data['num-frame']
 path_save_model = data['project']
-
-# Load dataset
 features, labels = [], []
-with open(input_dataset, 'rb') as f:
-    fts, lbs = pickle.load(f)
-    features.append(fts)
-    labels.append(lbs)
-del fts, lbs
+for path in input_dataset:
+# Load dataset
+    with open(path, 'rb') as f:
+        fts, lbs = pickle.load(f)
+        features.append(fts)
+        labels.append(lbs)
+    del fts, lbs
+    print(path)
 
 features = np.concatenate(features, axis=0)  # 30x34
+# features = features[:, :, :, :2]
+#
 # # get 15 frame
-features = features[:, ::2, :, :]
-features = processing_data(features)
+# features = features[:, ::2, :, :]
+# features = processing_data(features)
 # ****************************************** NORMALIZE CLASS ****************************************************
 labels = np.concatenate(labels, axis=0).argmax(1)
 
@@ -64,47 +68,16 @@ print(" --------- Number class before balance ---------")
 for i in range(7):
     print(f"class {i}: {labels.tolist().count(i)}")
 
-# # imbalance data
-# ids = np.array([[i] for i in range(len(features))])
-# under = RandomUnderSampler(sampling_strategy='majority')
-#
-# remove_min = (labels != 5)  # label == 3 or 6
-# label = labels[remove_min]
-# id = ids[remove_min]
-# label_min = labels[~remove_min]
-# id_min = ids[~remove_min]
-# id_min = id_min[:20000]
-# label_min = label_min[:20000]
-
-# remove_min = (label != 1)  # label == 3 or 6
-# label_min = np.concatenate((label[~remove_min], label_min), axis=0)
-# id_min = np.concatenate((id[~remove_min], id_min), axis=0)
-# label = label[remove_min]
-# id = id[remove_min]
-#
-# for _ in range(4):
-#     id, label = under.fit_resample(id, label)
-#
-# ids = np.concatenate((id, id_min), axis=0)
-# labels = np.concatenate((label, label_min), axis=0)
-
-# print(" --------- Number class after balance ---------")
-#
-# for i in range(7):
-#     print(f"class {i}: {labels.tolist().count(i)}")
-#
-# # get feature
-# ids = [i[0] for i in ids]
-# features = features[ids]
-# ---------------------------------------------------------
-
 
 x_train, x_valid, y_train, y_valid = train_test_split(features, labels, test_size=0.2,
                                                       random_state=42)
+del features, labels
 train_dataset = TensorDataset(torch.tensor(x_train, dtype=torch.float32),
                               torch.tensor(y_train))
 val_dataset = TensorDataset(torch.tensor(x_valid, dtype=torch.float32),
                             torch.tensor(y_valid))
+
+del x_train, x_valid, y_train, y_valid
 
 # create folder save
 if not os.path.exists(path_save_model):
@@ -128,11 +101,14 @@ val_loader = DataLoader(
     batch_size=batch_size, shuffle=False,
     num_workers=batch_size, pin_memory=True)
 
+size_train, size_val = len(train_dataset), len(val_dataset)
+del train_dataset, val_dataset
+
 classes_name = ['Standing', 'Stand up', 'Sitting', 'Sit down', 'Lying Down', 'Walking', 'Fall Down']
 print("Class name:", classes_name)
 
 # load model LSTM
-model = RNN(input_size=features.shape[-1], num_classes=len(classes_name), device=device)
+model = RNN(input_size=512, num_classes=len(classes_name), device=device)
 model = model.to(device)
 
 # config function loss and optimizer
@@ -174,17 +150,18 @@ def train_model(model, criterion, optimizer, num_epochs):
             loss.backward()
             optimizer.step()
             losses_train += loss.item()
+            _, preds = torch.max(outputs, 1)
+            train_corrects += torch.sum(preds == labels.data)
+            del batch_vid, labels
             # set memomy
             total_memory, used_memory_before, free_memory = map(int, os.popen('free -t -m').readlines()[-1].split()[1:])
             pbar_train.set_postfix(OrderedDict({'Loss': loss.item(),
                                                 'Memory': "%0.2f GB / %0.2f GB" % (used_memory_before / 1024,
                                                                                    total_memory / 1024)}))
-            _, preds = torch.max(outputs, 1)
-            train_corrects += torch.sum(preds == labels.data)
 
-        epoch_loss = losses_train / len(train_dataset)
+        epoch_loss = losses_train / size_train
         loss_list['train'].append(epoch_loss)
-        epoch_acc = train_corrects.double()/len(train_dataset)
+        epoch_acc = train_corrects.double()/size_train
         acc_list['train'].append(epoch_acc.cpu().numpy())
         logging.warning('Train: Accuracy: {}, Loss: {}, Time: {}'.format(epoch_acc.cpu().numpy(), epoch_loss,
                                                                          str(datetime.timedelta(seconds=time.time() - last_time))))
@@ -201,14 +178,16 @@ def train_model(model, criterion, optimizer, num_epochs):
                 losses_val += loss.item()
                 _, preds = torch.max(outputs, 1)
                 val_corrects += torch.sum(preds == labels.data)
+                del batch_vid, labels
 
-            epoch_loss = losses_val / len(val_dataset)
+            epoch_loss = losses_val / size_val
             loss_list['valid'].append(epoch_loss)
-            epoch_acc = val_corrects.double()/len(val_dataset)
+            epoch_acc = val_corrects.double()/ size_val
             acc_list['valid'].append(epoch_acc.cpu().numpy())
             logging.warning('Validation: Accuracy: {}, Loss: {}, Time: {}'.format(epoch_acc.cpu().numpy(),
                                                                                           epoch_loss,
                                                                                           str(datetime.timedelta(seconds=time.time() - last_time))))
+
             if best_loss_val == -1:
                 best_loss_val = losses_val
             if best_loss_val >= losses_val:
@@ -234,6 +213,7 @@ def train_model(model, criterion, optimizer, num_epochs):
         # plt.grid()
         fig.savefig(path_save_model + '/result.png', dpi=500)
         plt.close(fig)
+        del fig
 
     return model
 
