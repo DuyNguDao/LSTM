@@ -3,7 +3,6 @@ Dao Duy Ngu
 """
 import cv2
 import torch
-from torchvision import datasets, transforms
 import torch.nn as nn
 import torch.optim as optim
 import time
@@ -22,7 +21,6 @@ from collections import OrderedDict
 import logging
 import numpy as np
 from sklearn.model_selection import train_test_split
-from imblearn.under_sampling import RandomUnderSampler
 import yaml
 from Data_Loader.dataset import processing_data
 
@@ -58,6 +56,7 @@ features = features[:, :, :, :2]
 # get 15 frame
 features = features[:, ::2, :, :]
 features = processing_data(features)
+
 # ****************************************** NORMALIZE CLASS ****************************************************
 labels = np.concatenate(labels, axis=0).argmax(1)
 
@@ -105,7 +104,7 @@ classes_name = ['Standing', 'Stand up', 'Sitting', 'Sit down', 'Lying Down', 'Wa
 print("Class name:", classes_name)
 
 # load model LSTM
-model = RNN(input_size=26, num_classes=len(classes_name), device=device)
+model = RNN(input_size=24, num_classes=len(classes_name), device=device)
 model = model.to(device)
 
 # config function loss and optimizer

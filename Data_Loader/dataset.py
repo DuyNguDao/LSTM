@@ -2,11 +2,8 @@ import numpy as np
 
 
 def processing_data(features):
-    # remove score of keypoint
-    features = features[:, :, :, :2]
-
-    # remove 4 point 1,2,3,4 with eye, ear
-    features = np.concatenate([features[:, :, 0:1, :], features[:, :, 5:, :]], axis=2)
+    # remove 4 point 0,1,2,3,4 with eye, ear
+    features = np.concatenate([features[:, :, 0:1, :], features[:, :, 5:, :]], axis=2)  # remove point 1,2,3,4
     # ***************************************** NORMALIZE ************************************
 
     def scale_pose(xy):
@@ -24,4 +21,5 @@ def processing_data(features):
     features = scale_pose(features)
     # flatten
     features = features[:, :, :, :].reshape(len(features), features.shape[1], features.shape[2] * features.shape[3])
+    print(features.shape)
     return features
