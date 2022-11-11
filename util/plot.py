@@ -27,8 +27,8 @@ def plot_cm(CM, normalize=True, save_dir='', names_x=(), names_y=(), show=True):
 
         fig = plt.figure(figsize=(12, 9), tight_layout=True)
         sn.set(font_scale=2.0 if 2 < 50 else 0.8)  # for label size
-        labels_x = (0 < len(names_x) < 99) and len(names_x) == 7  # apply names to ticklabels
-        labels_y = (0 < len(names_y) < 99) and len(names_y) == 7  # apply names to ticklabels
+        labels_x = (0 < len(names_x) < 99) and len(names_x) == len(names_x)  # apply names to ticklabels
+        labels_y = (0 < len(names_y) < 99) and len(names_y) == len(names_y)  # apply names to ticklabels
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')  # suppress empty matrix RuntimeWarning: All-NaN slice encountered
             sn.heatmap(array, annot=2 < 30, annot_kws={"size": 16}, cmap='Blues', fmt=fmt, square=True,

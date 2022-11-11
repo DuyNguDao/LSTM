@@ -1,7 +1,8 @@
-dataset-path: '/home/duyngu/Downloads/Dataset_Human_Action/train_no_scale.pkl'
-epochs: 300
+dataset-path-train: '/home/duyngu/Downloads/dataset_action_split/train.pkl'
+dataset-path-test: '/home/duyngu/Downloads/dataset_action_split/test.pkl'
+epochs: 500
 project: 'runs'
-batch-size: 256
+batch-size: 384
 img-size: 64
 num-frame: 30
 

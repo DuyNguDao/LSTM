@@ -18,8 +18,7 @@ def processing_data(features):
         xy = (xy - xy_min) / (xy_max - xy_min) * 2 - 1
         return xy
 
-    features = scale_pose(features)
+    features[:, :, :, :2] = scale_pose(features[:, :, :, :2])
     # flatten
     features = features[:, :, :, :].reshape(len(features), features.shape[1], features.shape[2] * features.shape[3])
-    print(features.shape)
     return features

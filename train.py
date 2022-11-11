@@ -15,7 +15,7 @@ import pickle
 from torch.utils.data import DataLoader, TensorDataset
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # import model deep learning
-from models.rnn import RNN
+from models.rnn import RNN, GRUModel
 from tqdm import tqdm
 from collections import OrderedDict
 import logging
@@ -37,36 +37,72 @@ with open("./config.yaml", "r") as stream:
         print(exc)
 
 # parameter
-input_dataset = data['dataset-path']
+input_dataset_train = data['dataset-path-train']
+input_dataset_test = data['dataset-path-test']
 epochs = data['epochs']
 batch_size = data['batch-size']
 input_size = data['img-size']
 num_frame = data['num-frame']
 path_save_model = data['project']
 features, labels = [], []
-# Load dataset
-with open(input_dataset, 'rb') as f:
+# Load dataset train
+with open(input_dataset_train, 'rb') as f:
     fts, lbs = pickle.load(f)
     features.append(fts)
     labels.append(lbs)
 del fts, lbs
 
+# ****************************************** NORMALIZE CLASS ****************************************************
+labels = np.concatenate(labels, axis=0).argmax(1)
+# id = ((labels == 0) | (labels == 6))
+# labels[id] = 0
+# id = ((labels == 2) | (labels == 3) | (labels == 4))
+# labels[id] = 2
+# id = (labels == 5)
+# labels[id] = 3
+# id = (labels == 5)
+# labels[id] = 0
+# labels[~id] = 1
 features = np.concatenate(features, axis=0)  # 30x34
 features = features[:, :, :, :2]
 # get 15 frame
 features = features[:, ::2, :, :]
 features = processing_data(features)
-
-# ****************************************** NORMALIZE CLASS ****************************************************
-labels = np.concatenate(labels, axis=0).argmax(1)
-
-print(" --------- Number class before balance ---------")
+x_train = features
+y_train = labels
+print(" --------- Number class train---------")
 for i in range(7):
     print(f"class {i}: {labels.tolist().count(i)}")
 
+# load dataset test
+features, labels = [], []
+with open(input_dataset_test, 'rb') as f:
+    fts, lbs = pickle.load(f)
+    features.append(fts)
+    labels.append(lbs)
+del fts, lbs
+# ****************************************** NORMALIZE CLASS ****************************************************
+labels = np.concatenate(labels, axis=0).argmax(1)
+# id = ((labels == 0) | (labels == 6))
+# labels[id] = 0
+# id = ((labels == 2) | (labels == 3) | (labels == 4))
+# labels[id] = 2
+# id = (labels == 5)
+# labels[id] = 3
+# id = (labels == 5)
+# labels[id] = 0
+# labels[~id] = 1
+features = np.concatenate(features, axis=0) # 30x34
+features = features[:, :, :, :2]
+# get 15 frame
+features = features[:, ::2, :, :]
+features = processing_data(features)
+x_valid = features
+y_valid = labels
+print(" --------- Number class test---------")
+for i in range(7):
+    print(f"class {i}: {labels.tolist().count(i)}")
 
-x_train, x_valid, y_train, y_valid = train_test_split(features, labels, test_size=0.2,
-                                                      random_state=42)
 del features, labels
 train_dataset = TensorDataset(torch.tensor(x_train, dtype=torch.float32),
                               torch.tensor(y_train))
@@ -97,19 +133,21 @@ val_loader = DataLoader(
     batch_size=batch_size, shuffle=False,
     num_workers=batch_size, pin_memory=True)
 
-size_train, size_val = len(train_dataset), len(val_dataset)
 del train_dataset, val_dataset
 
-classes_name = ['Standing', 'Stand up', 'Sitting', 'Sit down', 'Lying Down', 'Walking', 'Fall Down']
+classes_name = ['Sit down', 'Lying Down', 'Walking', 'Stand up', 'Standing', 'Fall Down', 'Sitting']
+# classes_name = ['Fall Down', 'Other action']
+# classes_name = ['Siting', 'Lying Down', 'Walking or Standing', 'Fall Down']
 print("Class name:", classes_name)
 
 # load model LSTM
-model = RNN(input_size=24, num_classes=len(classes_name), device=device)
+model = RNN(input_size=26, num_classes=len(classes_name), device=device)
+# model = GRUModel(input_dim=34, hidden_dim=256, layer_dim=1, output_dim=len(classes_name))
 model = model.to(device)
 
 # config function loss and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(params=model.parameters(), lr=1e-4, weight_decay=1e-3)
+optimizer = optim.Adam(params=model.parameters(), lr=1e-3)
 
 data_loaders = {
     'train': train_loader,
@@ -126,7 +164,7 @@ def train_model(model, criterion, optimizer, num_epochs):
     :param num_epochs: number epochs
     :return:
     """
-    best_loss_val = -1
+    best_loss_acc = -1
     loss_list = {'train': [], 'valid': []}
     acc_list = {'train': [], 'valid': []}
 
@@ -147,7 +185,7 @@ def train_model(model, criterion, optimizer, num_epochs):
             optimizer.step()
             losses_train += loss.item()
             _, preds = torch.max(outputs, 1)
-            train_corrects += torch.sum(preds == labels.data)
+            train_corrects += (preds == labels.data).detach().cpu().numpy().mean()
             del batch_vid, labels
             # set memomy
             total_memory, used_memory_before, free_memory = map(int, os.popen('free -t -m').readlines()[-1].split()[1:])
@@ -155,11 +193,11 @@ def train_model(model, criterion, optimizer, num_epochs):
                                                 'Memory': "%0.2f GB / %0.2f GB" % (used_memory_before / 1024,
                                                                                    total_memory / 1024)}))
 
-        epoch_loss = losses_train / size_train
+        epoch_loss = losses_train / len(train_loader)
         loss_list['train'].append(epoch_loss)
-        epoch_acc = train_corrects.double()/size_train
-        acc_list['train'].append(epoch_acc.cpu().numpy())
-        logging.warning('Train: Accuracy: {}, Loss: {}, Time: {}'.format(epoch_acc.cpu().numpy(), epoch_loss,
+        epoch_acc = train_corrects/len(train_loader)
+        acc_list['train'].append(epoch_acc)
+        logging.warning('Train: Accuracy: {}, Loss: {}, Time: {}'.format(epoch_acc, epoch_loss,
                                                                          str(datetime.timedelta(seconds=time.time() - last_time))))
         # validation
         last_time = time.time()
@@ -173,21 +211,21 @@ def train_model(model, criterion, optimizer, num_epochs):
                 loss = criterion(outputs, labels)
                 losses_val += loss.item()
                 _, preds = torch.max(outputs, 1)
-                val_corrects += torch.sum(preds == labels.data)
+                val_corrects += (preds == labels.data).detach().cpu().numpy().mean()
                 del batch_vid, labels
 
-            epoch_loss = losses_val / size_val
+            epoch_loss = losses_val / len(val_loader)
             loss_list['valid'].append(epoch_loss)
-            epoch_acc = val_corrects.double()/ size_val
-            acc_list['valid'].append(epoch_acc.cpu().numpy())
-            logging.warning('Validation: Accuracy: {}, Loss: {}, Time: {}'.format(epoch_acc.cpu().numpy(),
+            epoch_acc = val_corrects / len(val_loader)
+            acc_list['valid'].append(epoch_acc)
+            logging.warning('Validation: Accuracy: {}, Loss: {}, Time: {}'.format(epoch_acc,
                                                                                           epoch_loss,
                                                                                           str(datetime.timedelta(seconds=time.time() - last_time))))
 
-            if best_loss_val == -1:
-                best_loss_val = losses_val
-            if best_loss_val >= losses_val:
-                best_loss_val = losses_val
+            if best_loss_acc == -1:
+                best_loss_acc = epoch_acc
+            if best_loss_acc <= epoch_acc:
+                best_loss_acc = epoch_acc
                 torch.save(model.state_dict(), path_save_model + '/best.pt')
                 logging.warning('Saved best model at epoch {}'.format(epoch))
 

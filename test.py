@@ -2,7 +2,7 @@ import torch
 import pickle
 from torch.utils.data import DataLoader, TensorDataset
 # import model deep learning
-from models.rnn import RNN
+from models.rnn import RNN, GRUModel
 import numpy as np
 from sklearn import metrics
 from util.plot import plot_cm
@@ -18,8 +18,11 @@ def detect_image(path_test, path_model, batch_size=256):
     """
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # load model
-    class_names = ('Standing', 'Stand up', 'Sitting', 'Sit down', 'Lying Down', 'Walking', 'Fall Down')
+    class_names = ['Sit down', 'Lying Down', 'Walking', 'Stand up', 'Standing', 'Fall Down', 'Sitting']
+    # class_names = ['Fall Down', 'Other action']
+    # class_names = ['Siting', 'Lying Down', 'Walking or Standing', 'Fall Down']
     model = RNN(input_size=26, num_classes=len(class_names), device=device)
+    # model = GRUModel(input_dim=34, hidden_dim=256, layer_dim=1, output_dim=len(class_names))
     model.load_state_dict(torch.load(path_model, map_location=device))
     model.to(device=device)
     model.eval()
@@ -39,6 +42,15 @@ def detect_image(path_test, path_model, batch_size=256):
     features = features[:, ::2, :, :]
     features = processing_data(features)
     labels = np.concatenate(labels, axis=0).argmax(1)
+    # id = ((labels == 0) | (labels == 6))
+    # labels[id] = 0
+    # id = ((labels == 2) | (labels == 3) | (labels == 4))
+    # labels[id] = 2
+    # id = (labels == 5)
+    # labels[id] = 3
+    # id = (labels == 5)
+    # labels[id] = 0
+    # labels[~id] = 1
     print(" --------- Number class test ---------")
     for i in range(7):
         print(f"class {i}: {labels.tolist().count(i)}")
@@ -78,6 +90,6 @@ def detect_image(path_test, path_model, batch_size=256):
 
 
 if __name__ == '__main__':
-    path_model = 'runs/exp0/best_skip.pt'
-    path_frame = '/home/duyngu/Downloads/Dataset_Human_Action/test_no_scale.pkl'
+    path_model = 'runs/exp6/best_skip_7.pt'
+    path_frame = '/home/duyngu/Downloads/dataset_action_split/test.pkl'
     detect_image(path_frame, path_model, batch_size=256)
